@@ -1,0 +1,212 @@
+%{
+
+#include <iostream>
+#include <string>
+#include <cstdlib>
+#include <map>
+
+#include "str.hpp"
+
+using namespace std;
+
+
+
+extern int yylex();
+
+void yyerror(string s)
+{
+   std::cerr << "Error:  " << s << std::endl;
+   exit(EXIT_FAILURE);
+}
+
+map<string, Str> variables;
+
+
+%}
+
+%union {
+   int value;
+   string *id;
+   string *str;
+   Str *strClass;
+   bool logicValue;
+}
+
+%token<value> num_token;
+%token<str> str_token;
+%token<id> id_token;
+
+%type<logicValue> bool_expr
+
+%type<value> index
+%type<strClass> expr
+%type<strClass> oper;
+
+
+%left '+' 
+%left '*'
+
+%token assign_token print_token index_token
+%token lower_token upper_token reverse_token
+%token neq_token eq_token lt_token gt_token
+%token rep_token islower_token isupper_token
+%token center_token find_token ignore_token
+%token isDigit_token isSpace_token 
+
+%start program
+
+
+
+%%
+
+program: program '\n' naredba
+        | naredba
+        ;
+naredba: id_token assign_token expr {  
+                                       auto ptr = variables.find(*$1);
+                                       if(!(ptr == variables.end()))
+                                       {
+                                          yyerror("Promenljiva je vec definisana");
+                                       }
+                                       
+                                       variables[*$1] = *$3;
+                                       delete $1;
+                                       delete $3;
+                                       
+                                    }
+        | print_token '(' expr ')'  {
+                                        $3->print_str();
+                                   
+                                    }
+        | print_token '(' index ')' {  cout << $3 << endl;  }
+        | print_token '(' bool_expr ')'  {  if($3)
+                                                cout << "true" << endl;
+                                            else
+                                                cout << "false" << endl; 
+                                         }
+        ;
+expr:   expr '+' expr   {  $$ = (*$1) + (*$3);  }
+        | num_token '*' expr   {
+                                  if($1 < 0)
+                                        yyerror("Num token is less then zero");
+                                  
+                                 $$ = $3->multiplication($1);
+                                 delete $3;
+                               }
+        | expr '*' num_token  {
+                                   if($3 < 0)
+                                        yyerror("Num token is less then zero");
+                                  
+                                   $$ = $1->multiplication($3);
+                                   delete $1;
+                              }
+        | lower_token '(' expr ')'  { 
+                                        $$ = $3->lower();
+        
+                                    } 
+        | rep_token '(' index ',' index ',' expr ',' expr ')' {
+                                                        if($3 < 0 || $3 >= $7->len_str())
+                                                                yyerror("Levi indeks nije ispravan");
+                                                        if($5 < 0 || $5 <= $3 || $5 > $7->len_str())
+                                                                yyerror("Desni ideks nije u redu");  
+                                                        $$ = new Str(*($7->replace($3, $5, $9->getStr())));
+                                                        delete $7;
+                                                        delete $9;
+                                                     }
+        | upper_token '(' expr ')'  {  $$ = $3->upper(); }
+        | '(' expr ')'  { $$ = new Str(*$2); delete $2; }
+        | reverse_token '(' expr ')'  { $$ = new Str(*($3->reverse())); delete $3; }
+        | center_token '(' num_token ',' expr ',' expr ')' {  $$ = new Str(*($5->center(*$7, $3))); delete $7; delete $5; }
+        | id_token    {   
+                        auto ptr = variables.find(*$1);
+                        if((ptr == variables.end()))
+                                yyerror("Promenljiva nije definisana");
+                        
+                        $$ = new Str(ptr->second);
+                        delete $1;
+                        
+                      }
+        | str_token   {  
+                        int len = (*$1).length()-2;
+                        string s = $1->substr(1, len);
+                        
+                        $$ = new Str(s);
+                        delete $1;
+                       
+                      }
+        | oper { $$ = $1; }
+        ;
+oper:   id_token '[' index ':' ']'  {
+                                       auto ptr = variables.find(*$1);
+                                       if(ptr == variables.end())
+                                                yyerror("Ne postoji promenljiva");
+                                       if($3 < 0 || $3 > ptr->second.len_str())
+                                                yyerror("Index je manji od nula");
+                                       $$ = ptr->second.subscript($3, 0);
+                                    }
+        | id_token '[' ':' index ']' { 
+                                        auto ptr = variables.find(*$1);
+                                        if(ptr == variables.end())
+                                                yyerror("Ne postoji promenljiva");
+                                        if($4 < 0 || $4 > ptr->second.len_str())
+                                                yyerror("Index je pogresan");
+                                                
+                                        
+                                        $$ = new Str(*(ptr->second.subscript(0, $4)));
+                                        
+                                        
+                                        delete $1;
+        
+                                     }
+        | id_token '[' index ':' index ']' { 
+                                                auto ptr = variables.find(*$1);
+                                                if(ptr == variables.end())
+                                                        yyerror("Ne postojoci id_token");
+                                                        
+                                                if($3 < 0 || $3 >= ptr->second.len_str())
+                                                        yyerror("Levi indeks nije ispravan");
+                                                if($5 < 0 || $5 <= $3 || $5 > ptr->second.len_str())
+                                                        yyerror("Desni indesk nije ispravan");
+                                                
+                                                $$ = new Str(*(ptr->second.subscript($3, $5)));
+                                                
+                                                
+                                                delete $1;
+        
+                                           } // implementirao sam u cpp
+        ;
+index: index_token '(' expr ',' expr ')' { 
+                                                        
+                                            $$ = $3->index($5->getStr());
+                                         }
+        | num_token { $$ = $1; }
+        | '|' expr '|' { $$ = $2->len_str();}
+        
+        ;
+bool_expr: expr eq_token expr { $$ = (*$1) == (*$3); }
+        | expr gt_token expr { $$ = (*$1) >= (*$3); }
+        | expr lt_token expr { $$ = (*$1) <= (*$3); }
+        | expr neq_token expr { $$ = (*$1) != (*$3); }
+        | expr '<' expr { $$ = (*$1) < (*$3); }
+        | expr '>' expr { $$ = (*$1) > (*$3); }
+        | islower_token '(' expr ')' { $$ = $3->islower(); delete $3; }
+        | isupper_token '(' expr ')' { $$ = $3->isupper(); delete $3; }
+        | find_token '(' expr ',' expr ')' { $$ = $3->find(*$5); delete $3; delete $5; }
+        | ignore_token '(' expr ',' expr ')' { $$ = $3->ignoreCase(*$5); delete $3; delete $5;}
+        | isDigit_token '(' expr ')' { $$ = $3->isDigit(); delete $3; }
+        | isSpace_token '(' expr ')' { $$ = $3->isSpace(); delete $3; }
+        ;
+      
+
+
+%%
+
+
+int main(int argc,char **argv)
+{
+   int preduvid = yyparse();
+   if(preduvid == 0)
+        cout << "Syntax analysis is ok\n";
+
+   return EXIT_SUCCESS;
+}
